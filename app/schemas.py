@@ -32,10 +32,14 @@ class UserUpdate(BaseModel):
 
 
 class UserOut(BaseModel):
+    """Public representation of a user.
+
+    Credentials (password_hash) are intentionally absent: every endpoint that
+    returns a user goes through this schema, so they can never leak.
+    """
     id: int
     username: str
     email: str
-    password_hash: str   # Issue: password hash is exposed in the response schema
     is_active: bool
     role: str
     created_at: datetime

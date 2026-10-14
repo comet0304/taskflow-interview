@@ -30,6 +30,7 @@ def test_register(client):
     assert data["role"] == "member"
     assert data["is_active"] is True
     assert "created_at" in data
+    assert "password_hash" not in data
 
 
 def test_register_duplicate_email(client):
