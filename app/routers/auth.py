@@ -70,6 +70,21 @@ def get_current_active_user(current_user=Depends(get_current_user)):
     return current_user
 
 
+# ── Authorization ─────────────────────────────────────────────────────────────
+
+def is_admin(user: models.User) -> bool:
+    return user.role == "admin"
+
+
+def ensure_owner_or_admin(owner_id: int, current_user: models.User) -> None:
+    """Allow the resource owner, or any admin; otherwise 403."""
+    if current_user.id != owner_id and not is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this resource",
+        )
+
+
 # Issue: No rate limiting on the login endpoint — vulnerable to brute force
 @router.post("/login", response_model=schemas.Token)
 def login(
