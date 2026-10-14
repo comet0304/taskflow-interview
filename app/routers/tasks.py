@@ -22,15 +22,14 @@ def list_tasks(
 ):
     """Return all tasks. Optionally filter by status or owner."""
     # Issue: No pagination — returns ALL rows; will break under load
-    tasks = db.query(models.Task).all()
-
-    # Issue: filtering done in Python instead of the database
+    # Filter in SQL so the indexes on status / owner_id can be used
+    query = db.query(models.Task)
     if status:
-        tasks = [t for t in tasks if t.status == status]
+        query = query.filter(models.Task.status == status)
     if owner_id:
-        tasks = [t for t in tasks if t.owner_id == owner_id]
+        query = query.filter(models.Task.owner_id == owner_id)
 
-    return tasks
+    return query.all()
 
 
 @router.get("/search")
