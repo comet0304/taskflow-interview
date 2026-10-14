@@ -1,12 +1,18 @@
 # tests/conftest.py
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+import os
 
-from app.main import app
-from app.database import Base, get_db
+# Must be set before `app` is imported: settings are loaded at import time.
+os.environ["SECRET_KEY"] = "test-secret-key-that-is-at-least-32-chars"
+os.environ["DATABASE_URL"] = "sqlite://"  # keep the app engine off the real DB file
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+
+from app.main import app  # noqa: E402
+from app.database import Base, get_db  # noqa: E402
 
 # Issue: uses a separate in-memory DB, but does not reset between individual tests
 # — tests that mutate data will bleed state into later tests
