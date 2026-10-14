@@ -8,15 +8,11 @@ import hashlib
 
 from app import models
 from app.routers.auth import hash_password, verify_password
-from tests.conftest import TestingSessionLocal
 
 
-def _stored_hash(username: str) -> str:
-    db = TestingSessionLocal()
-    try:
-        return db.query(models.User).filter_by(username=username).one().password_hash
-    finally:
-        db.close()
+def _stored_hash(db, username: str) -> str:
+    db.expire_all()  # re-read what the API committed
+    return db.query(models.User).filter_by(username=username).one().password_hash
 
 
 def test_hash_is_bcrypt_and_does_not_reveal_plaintext():
@@ -40,35 +36,33 @@ def test_verify_password():
     assert verify_password("wrong-pass", hashed) is False
 
 
-def test_registered_password_is_stored_as_bcrypt(client):
+def test_registered_password_is_stored_as_bcrypt(client, db_session):
     client.post("/auth/register", json={
         "username": "hashcheck",
         "email": "hashcheck@example.com",
         "password": "plaintext-pw",
     })
 
-    stored = _stored_hash("hashcheck")
+    stored = _stored_hash(db_session, "hashcheck")
     assert stored.startswith("$2b$")
     assert "plaintext-pw" not in stored
     assert stored != hashlib.md5(b"plaintext-pw").hexdigest()
 
 
-def test_legacy_md5_hash_is_upgraded_on_login(client):
-    db = TestingSessionLocal()
-    db.add(models.User(
+def test_legacy_md5_hash_is_upgraded_on_login(client, db_session):
+    db_session.add(models.User(
         username="legacyuser",
         email="legacy@example.com",
         password_hash=hashlib.md5(b"legacy-pass").hexdigest(),
     ))
-    db.commit()
-    db.close()
+    db_session.commit()
 
     response = client.post("/auth/login", data={
         "username": "legacyuser", "password": "legacy-pass",
     })
 
     assert response.status_code == 200
-    assert _stored_hash("legacyuser").startswith("$2b$")
+    assert _stored_hash(db_session, "legacyuser").startswith("$2b$")
     # And the upgraded hash still works
     assert client.post("/auth/login", data={
         "username": "legacyuser", "password": "legacy-pass",
