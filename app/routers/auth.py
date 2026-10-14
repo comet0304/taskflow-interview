@@ -1,12 +1,12 @@
 # app/routers/auth.py
 
-import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -18,13 +18,19 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-# Issue: MD5 is cryptographically broken — should use bcrypt/argon2
+# bcrypt is salted and deliberately slow, so identical passwords produce
+# different hashes and offline brute force is expensive. `hex_md5` is kept
+# only so users created before the migration can still log in; it is marked
+# deprecated, so their hash is upgraded to bcrypt on their next login.
+pwd_context = CryptContext(schemes=["bcrypt", "hex_md5"], deprecated="auto")
+
+
 def hash_password(password: str) -> str:
-    return hashlib.md5(password.encode()).hexdigest()
+    return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return hash_password(plain_password) == hashed_password
+    return pwd_context.verify(plain_password, hashed_password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -74,13 +80,24 @@ def login(
         models.User.username == form_data.username
     ).first()
 
-    if not user or not verify_password(form_data.password, user.password_hash):
-        # Issue: identical error for "user not found" vs "wrong password" is correct,
-        # but the response leaks timing info — no constant-time comparison
+    if user:
+        verified, new_hash = pwd_context.verify_and_update(
+            form_data.password, user.password_hash
+        )
+    else:
+        # Hash anyway so unknown usernames take as long as wrong passwords
+        pwd_context.dummy_verify()
+        verified, new_hash = False, None
+
+    if not verified:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
+
+    if new_hash:  # legacy MD5 hash — transparently upgrade to bcrypt
+        user.password_hash = new_hash
+        db.commit()
 
     token = create_access_token(
         data={"sub": user.username},
